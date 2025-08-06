@@ -11,10 +11,9 @@ from telebot import TeleBot  # type: ignore
 import requests.exceptions  # type: ignore
 
 from exceptions import (
-    APIConnectionError,
     APIStatusCodeError,
     TokensError,
-)  # я просто забываю про импорты) собираюсь в конце поправить их всегда и ...
+)
 
 
 load_dotenv()
@@ -40,13 +39,13 @@ logger.setLevel(logging.DEBUG)
 
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(logging.Formatter(
-    '%(asctime)s [%(levelname)s] %(message)s'
+    '%(asctime)s %(levelname)s [%(funcName)s:%(lineno)d] %(message)s'
 ))
 logger.addHandler(stream_handler)
 
 file_handler = RotatingFileHandler('homework.log', encoding='UTF-8')
 file_handler.setFormatter(logging.Formatter(
-    '%(asctime)s [%(levelname)s] %(message)s'
+    '%(asctime)s %(levelname)s [%(funcName)s:%(lineno)d] %(message)s'
 ))
 logger.addHandler(file_handler)
 
@@ -77,7 +76,6 @@ def send_message(bot, message):
         requests.exceptions.RequestException
     ) as error:
         logger.error(f'Ошибка при отправке сообщения в Telegram: {error}')
-        raise
 
 
 def get_api_answer(timestamp):
@@ -93,16 +91,15 @@ def get_api_answer(timestamp):
             timeout=10
         )
     except requests.RequestException as error:
-        raise APIConnectionError(f'Ошибка подключения к API: {error}')
+        raise ConnectionError(f'Ошибка подключения к API: {error}')
 
     if response.status_code != requests.codes.ok:
         raise APIStatusCodeError(
-            f'Неожиданный статус код {response.status_code} от API'
+            f'Неожиданный статус код {response.reason} от API'
         )
 
-    result = response.json()
     logger.debug('Успешный запрос и парсинг ответа API')
-    return result
+    return response.json()
 
 
 def check_response(response):
@@ -160,12 +157,8 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    try:
-        check_tokens()
-    except TokensError as error:
-        logger.critical(f'Программа остановлена: {error}')
-        sys.exit(1)
 
+    check_tokens()
     bot = TeleBot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
     last_error = None
@@ -177,25 +170,22 @@ def main():
 
             if homeworks:
                 message = parse_status(homeworks[0])
-                if send_message(bot, message):
-                    last_error = None
+                send_message(bot, message)
+                last_error = None
             else:
                 logger.debug('Новых статусов нет')
 
             timestamp = response.get('current_date', int(time.time()))
 
-        except (
-            APIConnectionError,
-            APIStatusCodeError,
-            TypeError,
-            ValueError,
-            KeyError
-        ) as error:
-            error_message = str(error)
+        except Exception as error:
+            error_message = (
+                f'Сбой в работе программы: {error.__class__.__name__}: {error}'
+            )
+
+            logger.error(error_message)
             if error_message != last_error:
-                logger.error(error_message)
-                if send_message(bot, error_message):
-                    last_error = error_message
+                send_message(bot, error_message)
+                last_error = error_message
 
         finally:
             time.sleep(RETRY_PERIOD)
