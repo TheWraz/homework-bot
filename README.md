@@ -55,5 +55,5 @@ TELEGRAM_CHAT_ID=ваш_chat_id
 
 5. Запустить бота
 ```
-python homework_bot.py
+python homework.py
 ```
